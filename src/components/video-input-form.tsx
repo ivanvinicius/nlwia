@@ -7,28 +7,45 @@ import { Textarea } from './ui/textarea'
 import { Button } from './ui/button'
 import { loadFFmpeg } from '@/lib/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
+import { api } from '@/lib/axios'
 
-export function VideoInputForm() {
+interface Props {
+  onVideoUploaded: (id: string) => void
+}
+
+type Status =
+  | 'waiting'
+  | 'converting'
+  | 'uploading'
+  | 'transcribing'
+  | 'success'
+
+const statusMessage = {
+  converting: 'Convertendo...',
+  uploading: 'Fazendo upload...',
+  transcribing: 'Transcrevendo...',
+  success: 'Sucesso!',
+}
+
+export function VideoInputForm({ onVideoUploaded }: Props) {
+  const [status, setStatus] = useState<Status>('waiting')
   const [videoFile, setVideoFile] = useState<null | File>(null)
   const promptInputRef = useRef<null | HTMLTextAreaElement>(null)
+  const disableActions = status !== 'waiting' && status !== 'success'
 
   function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
     const { files } = event.currentTarget
-
     if (!files) return
-
     setVideoFile(files[0])
   }
 
   async function convertVideoToAudio(video: File) {
-    console.log('Convert started.')
-
     const ffmpeg = await loadFFmpeg()
 
     await ffmpeg.writeFile('input.mp4', await fetchFile(video))
 
-    ffmpeg.on('progress', (progress) => {
-      console.log(`Convert progress: ${Math.round(progress.progress * 100)}`)
+    ffmpeg.on('progress', ({ progress }) => {
+      console.log(`Convertion progress: ${Math.round(progress * 100)}`)
     })
 
     await ffmpeg.exec([
@@ -49,8 +66,6 @@ export function VideoInputForm() {
       type: 'audio/mpeg',
     })
 
-    console.log('Convert finished.')
-
     return audioFile
   }
 
@@ -59,14 +74,23 @@ export function VideoInputForm() {
 
     const prompt = promptInputRef.current?.value
 
-    if (!videoFile) {
-      return
-    }
+    if (!videoFile) return
 
+    setStatus('converting')
     const audioFile = await convertVideoToAudio(videoFile)
 
-    console.log(prompt)
-    console.log(audioFile)
+    const data = new FormData()
+    data.append('file', audioFile)
+
+    setStatus('uploading')
+    const response = await api.post('/videos', data)
+    const videoId = response.data.video.id
+
+    setStatus('transcribing')
+    await api.post(`/videos/${videoId}/transcription`, { prompt })
+
+    setStatus('success')
+    onVideoUploaded(videoId)
   }
 
   const previewURL = useMemo(() => {
@@ -78,7 +102,7 @@ export function VideoInputForm() {
   return (
     <form className="space-y-6" onSubmit={handleUploadVideo}>
       <label
-        className="relative flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed text-sm text-muted-foreground hover:bg-primary/5"
+        className="relative flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed text-sm text-muted-foreground hover:bg-primary/5"
         htmlFor="video"
       >
         {previewURL ? (
@@ -107,16 +131,28 @@ export function VideoInputForm() {
       <div className="space-y-2">
         <Label htmlFor="transcription_prompt">Prompt de transcrição</Label>
         <Textarea
+          className="h-20 resize-none leading-relaxed"
           ref={promptInputRef}
           id="transcription_prompt"
-          className="h-20 resize-none leading-relaxed"
+          disabled={disableActions}
           placeholder="Inclua palavras-chave mencionadas no vídeo separadas por vírgula"
         />
       </div>
 
-      <Button className="w-full" type="submit">
-        Carregar vídeo
-        <Upload className="ml-2 h-4 w-4" />
+      <Button
+        data-success={status === 'success'}
+        className="w-full data-[success=true]:bg-green-500"
+        type="submit"
+        disabled={disableActions}
+      >
+        {status === 'waiting' ? (
+          <>
+            Carregar vídeo
+            <Upload className="ml-2 h-4 w-4" />
+          </>
+        ) : (
+          statusMessage[status]
+        )}
       </Button>
     </form>
   )

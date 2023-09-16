@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Wand2 } from 'lucide-react'
+import { useCompletion } from 'ai/react'
 
 import { Header } from './components/header'
 import { Textarea } from './components/ui/textarea'
@@ -14,32 +16,39 @@ import {
   SelectValue,
 } from './components/ui/select'
 import { VideoInputForm } from './components/video-input-form'
+import { PromptSelect } from './components/promp-select'
 
 export function App() {
+  const [videoId, setVideoId] = useState<null | string>(null)
+  const [temperature, setTemperature] = useState(0.5)
+
+  const {
+    input,
+    setInput,
+    handleInputChange,
+    handleSubmit,
+    completion,
+    isLoading,
+  } = useCompletion({
+    api: 'http://localhost:3333/ai/complete',
+    body: { videoId, temperature },
+    headers: { 'Content-Type': 'application/json' },
+  })
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
 
       <main className="flex flex-1 gap-6 p-6">
         <aside className="w-80 space-y-6">
-          <VideoInputForm />
+          <VideoInputForm onVideoUploaded={setVideoId} />
 
           <Separator />
 
-          <form className="space-y-6">
+          <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <Label>Prompt</Label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um prompt..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="title">Título para Youtube</SelectItem>
-                  <SelectItem value="description">
-                    Descrição de vídeo para Youtube
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <PromptSelect onPromptSelected={setInput} />
             </div>
 
             <div className="space-y-4">
@@ -61,7 +70,13 @@ export function App() {
 
             <div className="space-y-4">
               <Label>Temperatura</Label>
-              <Slider min={0} max={1} step={0.1} />
+              <Slider
+                min={0}
+                max={1}
+                step={0.1}
+                value={[temperature]}
+                onValueChange={(value) => setTemperature(value[0])}
+              />
               <span className="block text-xs italic leading-relaxed text-muted-foreground">
                 Valorem mais altos tedem a deixar o resultado mais criativo e
                 com possíveis erros
@@ -70,7 +85,7 @@ export function App() {
 
             <Separator />
 
-            <Button className="w-full " type="submit">
+            <Button className="w-full " type="submit" disabled={isLoading}>
               Executar
               <Wand2 className="ml-2 h-4 w-4" />
             </Button>
@@ -82,11 +97,14 @@ export function App() {
             <Textarea
               className="resize-none p-4 leading-relaxed"
               placeholder="Inclua o prompt para a IA..."
+              value={input}
+              onChange={handleInputChange}
             />
             <Textarea
               className="resize-none p-4 leading-relaxed"
               placeholder="Resultado gerado pela IA..."
               readOnly
+              value={completion}
             />
           </div>
 
